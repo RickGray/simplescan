@@ -10,6 +10,7 @@ import random
 import string
 import difflib
 import urlparse
+import platform
 import argparse
 
 from multiprocessing.dummy import Pool as ThreadPool
@@ -26,12 +27,11 @@ BANNER = r'''
  ___/ / / / / / / / /_/ / /  __/__/ / /__/ /_/ / / / /
 /____/_/_/ /_/ /_/ .___/_/\___/____/\___/\__,_/_/ /_/
                 /_/
-
-   Author: RickGray@0xFA-Team          |
+                                        (alpha-0.1)
+   Author: RickGray@0xFA-Team
            Croxy@0xFA-Team             |
    Create: 2015-10-19                  |
-   Update: 2015-10-19                  |
-  Version: 0.1-alpha                   |
+   Update: 2015-11-02                  |
 _______________________________________|
 '''
 
@@ -82,6 +82,23 @@ def parse_commond():
     return parse.parse_args()
 
 
+def cprint(val, color):
+    """ *nix下终端着色输出 """
+    colorcodes = {'bold': {True: '\x1b[1m', False: '\x1b[22m'},
+                  'cyan': {True: '\x1b[36m', False: '\x1b[39m'},
+                  'blue': {True: '\x1b[34m', False: '\x1b[39m'},
+                  'red': {True: '\x1b[31m', False: '\x1b[39m'},
+                  'magenta': {True: '\x1b[35m', False: '\x1b[39m'},
+                  'green': {True: '\x1b[32m', False: '\x1b[39m'},
+                  'yellow': {True: '\x1b[33m', False: '\x1b[39m'},
+                  'underline': {True: '\x1b[4m', False: '\x1b[24m'}}
+    colors = (platform.system() != 'Windows')
+    if colors:
+        sys.stdout.write(colorcodes[color][True] + val + colorcodes[color][False] + '\n')
+    else:
+        sys.stdout.write(val)
+
+
 def get_random_string(length=16):
     """ 随机生成指定长度由大小写字母和数字构成的字符串 """
     choices = string.letters + string.digits
@@ -120,7 +137,8 @@ def build_not_found_template(url):
 
     pre_responses = []
     for _ in range(6):
-        # 随机生成路径，相继访问得到页面内容，对成功返回的结果进行比较得到404页面模板
+        # 随机生成路径，相继访问得到页面内容，
+        # 对成功返回的结果进行比较得到404页面模板
         random_path = build_random_path()
         random_url = urlparse.urljoin(base_url, random_path)
         try:
@@ -133,7 +151,7 @@ def build_not_found_template(url):
         pre_responses.append(response)
 
     if len(pre_responses) < 2:
-        # 由于随机获取到的页面内容数量太少不能进行 404页面模板 提取操作
+        # 由于随机获取到的页面内容数量太少不能进行404页面模板提取操作
         return None
 
     ratios = []
