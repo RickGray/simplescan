@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import time
+import socket
 import random
 import string
 import difflib
@@ -45,6 +46,9 @@ _OPTIONS_HELP_ = {
     'AGENT': 'HTTP User-Agent header value',
     'COOKIE': 'HTTP Cookie header value',
     'TIMEOUT': 'Seconds to wait before timeout connection (default 10)',
+    'MODE': ('The mode will be use, "quick" mode use HEAD method to scan, '
+             '"smart" mode will filter some pages with 404 page template '
+             'which builed when begging (default: "quick")'),
     'THREADS': 'Max number of concurrent HTTP(s) requests (default 10)',
 }
 
@@ -76,6 +80,9 @@ def parse_commond():
                          type=int, default=10, help=_OPTIONS_HELP_['TIMEOUT'])
 
     optimization = parse.add_argument_group('optimization')
+    optimization.add_argument('--mode', dest='MODE',
+                              type=str, choices=['quick', 'smart'], default='quick',
+                              help=_OPTIONS_HELP_['MODE'])
     optimization.add_argument('--threads', dest='THREADS',
                               type=int, default=10, help=_OPTIONS_HELP_['THREADS'])
 
@@ -131,7 +138,7 @@ def patch_url(url):
     return url
 
 
-def build_not_found_template(url):
+def build_not_found_template(url, headers=None):
     """ 获取扫描URL基本路径，构建基于当前目录的404页面模板 """
     base_url = urlparse.urljoin(url, './')
 
@@ -142,7 +149,7 @@ def build_not_found_template(url):
         random_path = build_random_path()
         random_url = urlparse.urljoin(base_url, random_path)
         try:
-            response = requests.get(random_url)
+            response = requests.get(random_url, headers=headers)
         except requests.exceptions.RequestException, ex:
             err = 'failed to access %s, ' % random_url
             err += str(ex)
@@ -172,9 +179,9 @@ def build_not_found_template(url):
 # def check_url(url, err_content):
 def check_url(opt):
     """ 请求指定URL地址，返回其状态值，根据 err_content 来过滤404页面 """
-    url, err_content = opt[0], opt[1]
+    url, err_content, headers = opt[0], opt[1], opt[2]
     try:
-        response = requests.get(url, stream=True)
+        response = requests.get(url, stream=True, headers=headers)
     except requests.exceptions.RequestException, ex:
         err = 'failed to access %s, ' % url
         err += str(ex)
@@ -222,9 +229,21 @@ def build_extended_wordlist(t_url):
     return wordlist
 
 
+def get_request_headers(args):
+    """ 获取命令参数构造每次请求的自定义头部 """
+    headers = {}
+    if args.AGENT:
+        headers['User-Agent'] = args.AGENT
+    if args.COOKIE:
+        headers['Cookie'] = args.COOKIE
+
+    return headers
+
+
 def process_with_url(url, args):
     """ 单一目标扫描处理 """
     t_url = patch_url(url)
+    headers = get_request_headers(args)
     if not args.WORDFILE and not args.WORDFILEDIR:
         print 'wordfile or wordfile dir required'
         sys.exit()
@@ -237,12 +256,16 @@ def process_with_url(url, args):
         sys.exit()
 
     # 获取 404页面模板
-    err_content = build_not_found_template(t_url)
+    if args.MODE == 'smart':
+        err_content = build_not_found_template(t_url, headers)
+    else:
+        err_content = None
+
     # TODO 需要改进多线程参数冗余 - err_content
     # 在生成带扫描URL时，默认以当前目录为扫描路径
-    l = [(urlparse.urljoin(t_url, _.strip().lstrip('/')), err_content)
+    l = [(urlparse.urljoin(t_url, _.strip().lstrip('/')), err_content, headers)
          for _ in build_extended_wordlist(t_url)]
-    l += [(urlparse.urljoin(t_url, _.strip().lstrip('/')), err_content)
+    l += [(urlparse.urljoin(t_url, _.strip().lstrip('/')), err_content, headers)
           for _ in w_fd.readlines()]
 
     # 初始化线程池
@@ -277,6 +300,10 @@ def run(args):
 
     if args.PROXY:
         set_request_proxy(args.PROXY)
+
+    if args.TIMEOUT:
+        socket.setdefaulttimeout(args.TIMEOUT)
+        print 'set request time out to %ds' % args.TIMEOUT
 
     if not args.URL and not args.URLFILE:
         print 'url or url file required'
